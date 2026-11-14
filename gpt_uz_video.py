@@ -1,10 +1,12 @@
 import torch
+import torch.nn as nn
+from torch.nn import functional as F
 
 with open("input.txt", 'r', encoding='utf-8') as f:
     text = f.read()
 
 chars = sorted(list(set(text))) #uzimamo set slova i znakova iz teksta stavljamo ih u listu i sortiramo, chars pokazuje na mjesto u memoriji gdje se nalazi
-#vocab_size = len(chars) #printamo velicniu nasih spremljenih slova odnosno znakova i slova
+vocab_size = len(chars) #printamo velicniu nasih spremljenih slova odnosno znakova i slova
 #print(''.join(chars))
 #print(vocab_size)
 
@@ -63,5 +65,41 @@ for b in range(batch_size): #prolazi kroz 4 chunka
         context = xb[b, :t+1] #prvih t+1 znakova chunka
         target = yb[b, t] #sljedeci znak
         print(f"when input is {context.tolist()} the target: {target}")
+
+torch.manual_seed(1337)
+
+class BiagramLanguageModel(nn.Module):
+    def __init__(self, vocab_size):
+        super().__init__()
+        self.token_embedding_table = nn.Embedding(vocab_size, vocab_size) #svaki token direktno cita logits za sljedeci token iz lookup table
+    def forward(self, idx, targets=None): #idx i targets su oboje B i T tensor integera
+
+        logits = self.token_embedding_table(idx) #(B,T,C)
+        if targets is None:
+            loss = None
+        else:
+            B, T, C = logits.shape
+            logits = logits.view(B*T, C)
+            targets = targets.view(B*T)
+            loss = F.cross_entropy(logits, targets)
+
+        return logits, loss
+    def generate(self, idx, max_new_tokens):
+        for _ in range(max_new_tokens): #idx je polje (B, T) u trenutnom kontekstu
+            logits, loss = self(idx) #prihvaca predikcije
+            logits = logits[:, -1, :] #fokusira se samo na zadnji vremenski korak, postaje (B, C)
+            probs = F.softmax(logits, dim=-1) #koristimo softmax da dobimo šanse, (B, C)
+            idx_next = torch.multinomial(probs, num_samples=1) #uzorak iz distribucije, (B, 1)
+            idx = torch.cat((idx, idx_next), dim=1) #(B, T+1)
+        return idx
+
+
+m = BiagramLanguageModel(vocab_size)
+logits, loss = m(xb, yb)
+print(logits.shape)
+print(loss)
+
+print(decode(m.generate(idx = torch.zeros((1, 1), dtype=torch.long), max_new_tokens=100)[0].tolist()))
+
 
     
